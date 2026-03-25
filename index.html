@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>注文確認</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      background: #f7f7f7;
+      color: #222;
+    }
+
+    .wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+    }
+
+    .card {
+      width: 100%;
+      max-width: 560px;
+      background: #fff;
+      border-radius: 16px;
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+      padding: 32px 24px;
+      text-align: center;
+      box-sizing: border-box;
+    }
+
+    .title {
+      margin: 0 0 12px;
+      font-size: 24px;
+      font-weight: 700;
+    }
+
+    .message {
+      margin: 0;
+      font-size: 16px;
+      line-height: 1.7;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 28px;
+      height: 28px;
+      border: 3px solid #ddd;
+      border-top: 3px solid #333;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+      margin-bottom: 16px;
+    }
+
+    .sub {
+      margin-top: 10px;
+      color: #666;
+      font-size: 14px;
+    }
+
+    .error {
+      color: #c62828;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div id="loadingArea">
+        <div class="loading"></div>
+        <h1 class="title">確認中です</h1>
+        <p class="message">しばらくお待ちください。</p>
+      </div>
+
+      <div id="resultArea" style="display:none;">
+        <h1 class="title" id="resultTitle">ご案内</h1>
+        <p class="message" id="resultMessage"></p>
+        <p class="sub" id="resultSub"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      // GAS WebアプリURL
+      const GAS_ENDPOINT = 'ここにデプロイしたGASのWebアプリURLを入れてください';
+
+      const loadingArea = document.getElementById('loadingArea');
+      const resultArea = document.getElementById('resultArea');
+      const resultTitle = document.getElementById('resultTitle');
+      const resultMessage = document.getElementById('resultMessage');
+      const resultSub = document.getElementById('resultSub');
+
+      function showMessage(title, message, sub, isError) {
+        loadingArea.style.display = 'none';
+        resultArea.style.display = 'block';
+        resultTitle.textContent = title || 'ご案内';
+        resultMessage.textContent = message || '';
+        resultSub.textContent = sub || '';
+        resultMessage.className = isError ? 'message error' : 'message';
+      }
+
+      function getTableIdFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        return (params.get('tableId') || '').trim();
+      }
+
+      async function main() {
+        try {
+          const tableId = getTableIdFromUrl();
+
+          if (!tableId) {
+            showMessage(
+              'エラー',
+              'tableId がURLに指定されていません。',
+              '例: ?tableId=table1',
+              true
+            );
+            return;
+          }
+
+          const url = GAS_ENDPOINT + '?tableId=' + encodeURIComponent(tableId);
+
+          const response = await fetch(url, {
+            method: 'GET',
+            cache: 'no-store'
+          });
+
+          if (!response.ok) {
+            showMessage(
+              '通信エラー',
+              'サーバーとの通信に失敗しました。',
+              'HTTP Status: ' + response.status,
+              true
+            );
+            return;
+          }
+
+          const data = await response.json();
+
+          if (!data || data.ok !== true) {
+            showMessage(
+              '処理エラー',
+              (data && data.message) ? data.message : '不明なエラーが発生しました。',
+              '',
+              true
+            );
+            return;
+          }
+
+          if (data.shouldRedirect && data.redirectUrl) {
+            window.location.replace(data.redirectUrl);
+            return;
+          }
+
+          showMessage(
+            'ご案内',
+            data.message || '注文は終了しました。またのご来店をお待ちしております',
+            '',
+            false
+          );
+
+        } catch (error) {
+          showMessage(
+            'システムエラー',
+            '予期しないエラーが発生しました。',
+            error && error.message ? error.message : String(error),
+            true
+          );
+        }
+      }
+
+      main();
+    })();
+  </script>
+</body>
+</html>
