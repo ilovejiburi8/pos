@@ -30,18 +30,8 @@
       text-align: center;
       box-sizing: border-box;
     }
-    .title {
-      margin: 0 0 12px;
-      font-size: 24px;
-      font-weight: 700;
-    }
-    .message {
-      margin: 0;
-      font-size: 16px;
-      line-height: 1.7;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
+    .title { margin: 0 0 12px; font-size: 24px; font-weight: 700; }
+    .message { margin: 0; font-size: 16px; line-height: 1.7; white-space: pre-wrap; }
     .loading {
       display: inline-block;
       width: 28px;
@@ -52,17 +42,8 @@
       animation: spin 0.9s linear infinite;
       margin-bottom: 16px;
     }
-    .sub {
-      margin-top: 10px;
-      color: #666;
-      font-size: 14px;
-    }
-    .error {
-      color: #c62828;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
+    .error { color: #c62828; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -70,101 +51,73 @@
     <div class="card">
       <div id="loadingArea">
         <div class="loading"></div>
-        <h1 class="title">認証確認中</h1>
-        <p class="message">端末情報を確認しています...</p>
+        <h1 class="title">認証中</h1>
+        <p class="message">サーバーに接続しています...</p>
       </div>
-
       <div id="resultArea" style="display:none;">
         <h1 class="title" id="resultTitle">ご案内</h1>
         <p class="message" id="resultMessage"></p>
-        <p class="sub" id="resultSub"></p>
       </div>
     </div>
   </div>
 
   <script>
     (function () {
-      // ★重要：ご自身のGAS WebアプリURLに差し替えてください
+      // ★ここに新しいGASのデプロイURLを貼り付けてください
       const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbx5kqUSYOCbSZODRZOgcLw5CAkWMoT3HgRi-iVzR7l0RTR6hwOT0lSQ_tQAume_APeuIA/exec';
 
-      const loadingArea = document.getElementById('loadingArea');
-      const resultArea = document.getElementById('resultArea');
-      const resultTitle = document.getElementById('resultTitle');
-      const resultMessage = document.getElementById('resultMessage');
-      const resultSub = document.getElementById('resultSub');
-
-      function showMessage(title, message, sub, isError) {
-        loadingArea.style.display = 'none';
-        resultArea.style.display = 'block';
-        resultTitle.textContent = title || 'ご案内';
-        resultMessage.textContent = message || '';
-        resultSub.textContent = sub || '';
-        resultMessage.className = isError ? 'message error' : 'message';
+      function showMessage(title, message, isError) {
+        document.getElementById('loadingArea').style.display = 'none';
+        const resArea = document.getElementById('resultArea');
+        resArea.style.display = 'block';
+        document.getElementById('resultTitle').textContent = title;
+        const msgEl = document.getElementById('resultMessage');
+        msgEl.textContent = message;
+        msgEl.className = isError ? 'message error' : 'message';
       }
 
-      // URLから注文ID(tableId)を取得
-      function getTableIdFromUrl() {
-        const params = new URLSearchParams(window.location.search);
-        return (params.get('tableId') || '').trim();
-      }
-
-      // スマホ端末固有のIDを取得または新規生成して保存
       function getOrCreateDeviceId() {
-        let deviceId = localStorage.getItem('app_unique_device_id');
-        if (!deviceId) {
-          // ランダムな文字列を生成してデバイスIDとする
-          deviceId = 'dev-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
-          localStorage.setItem('app_unique_device_id', deviceId);
+        let id = localStorage.getItem('order_device_id');
+        if (!id) {
+          id = 'dev-' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+          localStorage.setItem('order_device_id', id);
         }
-        return deviceId;
+        return id;
       }
 
       async function main() {
         try {
-          const tableId = getTableIdFromUrl();
+          const params = new URLSearchParams(window.location.search);
+          const tableId = (params.get('tableId') || '').trim();
           const deviceId = getOrCreateDeviceId();
 
           if (!tableId) {
-            showMessage('エラー', '注文IDが指定されていません。', 'URLに ?tableId=xxx を含めてください。', true);
+            showMessage('エラー', 'URLに注文ID(?tableId=xxx)が含まれていません。', true);
             return;
           }
 
-          // GASへ注文IDとデバイスIDを送信
+          // Fetch実行（Failed to fetch対策としてmode: no-corsは使わず、GAS側で解消する）
           const url = `${GAS_ENDPOINT}?tableId=${encodeURIComponent(tableId)}&deviceId=${encodeURIComponent(deviceId)}`;
-
-          const response = await fetch(url, {
-            method: 'GET',
-            cache: 'no-store'
+          
+          const response = await fetch(url).catch(e => {
+            throw new Error('ネットワークエラー。GASの公開設定が「全員(Anyone)」になっているか確認してください。');
           });
 
           if (!response.ok) {
-            showMessage('通信エラー', 'サーバーへの接続に失敗しました。', 'Status: ' + response.status, true);
-            return;
+            throw new Error('サーバーエラーが発生しました (Status: ' + response.status + ')');
           }
 
           const data = await response.json();
 
-          // GAS側で一致しない（ok: false）と判定された場合
-          if (!data || data.ok !== true) {
-            showMessage(
-              'アクセス制限',
-              data.message || 'この注文を表示する権限がありません。',
-              '他の端末で既に注文が開始されている可能性があります。',
-              true
-            );
-            return;
-          }
-
-          // 一致した場合、AppSheetへリダイレクト
-          if (data.shouldRedirect && data.redirectUrl) {
+          if (data.ok) {
+            // 認証成功：AppSheetへ移動
             window.location.replace(data.redirectUrl);
-            return;
+          } else {
+            showMessage('アクセス制限', data.message || '認証に失敗しました。', true);
           }
-
-          showMessage('完了', data.message || '認証に成功しました。', '', false);
 
         } catch (error) {
-          showMessage('システムエラー', '予期しないエラーが発生しました。', error.message, true);
+          showMessage('システムエラー', error.message, true);
         }
       }
 
