@@ -12,7 +12,6 @@
       background: #f7f7f7;
       color: #222;
     }
-
     .wrap {
       min-height: 100vh;
       display: flex;
@@ -21,7 +20,6 @@
       padding: 24px;
       box-sizing: border-box;
     }
-
     .card {
       width: 100%;
       max-width: 560px;
@@ -32,13 +30,11 @@
       text-align: center;
       box-sizing: border-box;
     }
-
     .title {
       margin: 0 0 12px;
       font-size: 24px;
       font-weight: 700;
     }
-
     .message {
       margin: 0;
       font-size: 16px;
@@ -46,7 +42,6 @@
       white-space: pre-wrap;
       word-break: break-word;
     }
-
     .loading {
       display: inline-block;
       width: 28px;
@@ -57,17 +52,14 @@
       animation: spin 0.9s linear infinite;
       margin-bottom: 16px;
     }
-
     .sub {
       margin-top: 10px;
       color: #666;
       font-size: 14px;
     }
-
     .error {
       color: #c62828;
     }
-
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
@@ -78,8 +70,8 @@
     <div class="card">
       <div id="loadingArea">
         <div class="loading"></div>
-        <h1 class="title">確認中です</h1>
-        <p class="message">しばらくお待ちください。</p>
+        <h1 class="title">認証確認中</h1>
+        <p class="message">端末情報を確認しています...</p>
       </div>
 
       <div id="resultArea" style="display:none;">
@@ -92,7 +84,7 @@
 
   <script>
     (function () {
-      // GAS WebアプリURL
+      // ★重要：ご自身のGAS WebアプリURLに差し替えてください
       const GAS_ENDPOINT = 'https://script.google.com/macros/s/AKfycbx5kqUSYOCbSZODRZOgcLw5CAkWMoT3HgRi-iVzR7l0RTR6hwOT0lSQ_tQAume_APeuIA/exec';
 
       const loadingArea = document.getElementById('loadingArea');
@@ -110,26 +102,35 @@
         resultMessage.className = isError ? 'message error' : 'message';
       }
 
+      // URLから注文ID(tableId)を取得
       function getTableIdFromUrl() {
         const params = new URLSearchParams(window.location.search);
         return (params.get('tableId') || '').trim();
       }
 
+      // スマホ端末固有のIDを取得または新規生成して保存
+      function getOrCreateDeviceId() {
+        let deviceId = localStorage.getItem('app_unique_device_id');
+        if (!deviceId) {
+          // ランダムな文字列を生成してデバイスIDとする
+          deviceId = 'dev-' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36);
+          localStorage.setItem('app_unique_device_id', deviceId);
+        }
+        return deviceId;
+      }
+
       async function main() {
         try {
           const tableId = getTableIdFromUrl();
+          const deviceId = getOrCreateDeviceId();
 
           if (!tableId) {
-            showMessage(
-              'エラー',
-              'tableId がURLに指定されていません。',
-              '例: ?tableId=table1',
-              true
-            );
+            showMessage('エラー', '注文IDが指定されていません。', 'URLに ?tableId=xxx を含めてください。', true);
             return;
           }
 
-          const url = GAS_ENDPOINT + '?tableId=' + encodeURIComponent(tableId);
+          // GASへ注文IDとデバイスIDを送信
+          const url = `${GAS_ENDPOINT}?tableId=${encodeURIComponent(tableId)}&deviceId=${encodeURIComponent(deviceId)}`;
 
           const response = await fetch(url, {
             method: 'GET',
@@ -137,46 +138,33 @@
           });
 
           if (!response.ok) {
-            showMessage(
-              '通信エラー',
-              'サーバーとの通信に失敗しました。',
-              'HTTP Status: ' + response.status,
-              true
-            );
+            showMessage('通信エラー', 'サーバーへの接続に失敗しました。', 'Status: ' + response.status, true);
             return;
           }
 
           const data = await response.json();
 
+          // GAS側で一致しない（ok: false）と判定された場合
           if (!data || data.ok !== true) {
             showMessage(
-              '処理エラー',
-              (data && data.message) ? data.message : '不明なエラーが発生しました。',
-              '',
+              'アクセス制限',
+              data.message || 'この注文を表示する権限がありません。',
+              '他の端末で既に注文が開始されている可能性があります。',
               true
             );
             return;
           }
 
+          // 一致した場合、AppSheetへリダイレクト
           if (data.shouldRedirect && data.redirectUrl) {
             window.location.replace(data.redirectUrl);
             return;
           }
 
-          showMessage(
-            'ご案内',
-            data.message || '注文は終了しました。またのご来店をお待ちしております',
-            '',
-            false
-          );
+          showMessage('完了', data.message || '認証に成功しました。', '', false);
 
         } catch (error) {
-          showMessage(
-            'システムエラー',
-            '予期しないエラーが発生しました。',
-            error && error.message ? error.message : String(error),
-            true
-          );
+          showMessage('システムエラー', '予期しないエラーが発生しました。', error.message, true);
         }
       }
 
